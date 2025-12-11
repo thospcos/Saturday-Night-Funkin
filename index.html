@@ -624,4 +624,449 @@
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 
                 // Create 4 different beep sounds for each arrow
-                for (let i = 0; i < 4; i++)
+                for (let i = 0; i < 4; i++) {
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    // Different frequencies for different arrows
+                    const frequencies = [261.63, 329.63, 392.00, 493.88]; // C, E, G, B
+                    oscillator.frequency.value = frequencies[i];
+                    oscillator.type = 'sine';
+                    
+                    gainNode.gain.value = 0.1;
+                    
+                    beepSounds.push({
+                        oscillator: oscillator,
+                        gainNode: gainNode
+                    });
+                }
+            } catch (e) {
+                console.log("Audio context not supported, continuing without sound");
+            }
+        }
+        
+        // Play a beep sound for a specific arrow
+        function playBeepSound(index) {
+            if (!audioContext || index < 0 || index >= beepSounds.length) return;
+            
+            try {
+                const now = audioContext.currentTime;
+                const sound = beepSounds[index];
+                
+                sound.oscillator.start(now);
+                sound.oscillator.stop(now + 0.1);
+                
+                // Reset oscillator for next use
+                setTimeout(() => {
+                    if (audioContext.state !== 'closed') {
+                        sound.oscillator = audioContext.createOscillator();
+                        sound.gainNode = audioContext.createGain();
+                        
+                        const frequencies = [261.63, 329.63, 392.00, 493.88];
+                        sound.oscillator.frequency.value = frequencies[index];
+                        sound.oscillator.type = 'sine';
+                        sound.oscillator.connect(sound.gainNode);
+                        sound.gainNode.connect(audioContext.destination);
+                        sound.gainNode.gain.value = 0.1;
+                    }
+                }, 150);
+            } catch (e) {
+                console.log("Error playing sound:", e);
+            }
+        }
+        
+        // Set up event listeners
+        function setupEventListeners() {
+            // Keyboard controls
+            document.addEventListener("keydown", (e) => {
+                if (!gameActive) return;
+                
+                switch(e.key) {
+                    case "ArrowLeft":
+                        handleKeyPress(0);
+                        keyState.left = true;
+                        document.getElementById("key-left").classList.add("pressed");
+                        break;
+                    case "ArrowDown":
+                        handleKeyPress(1);
+                        keyState.down = true;
+                        document.getElementById("key-down").classList.add("pressed");
+                        break;
+                    case "ArrowUp":
+                        handleKeyPress(2);
+                        keyState.up = true;
+                        document.getElementById("key-up").classList.add("pressed");
+                        break;
+                    case "ArrowRight":
+                        handleKeyPress(3);
+                        keyState.right = true;
+                        document.getElementById("key-right").classList.add("pressed");
+                        break;
+                }
+            });
+            
+            document.addEventListener("keyup", (e) => {
+                switch(e.key) {
+                    case "ArrowLeft":
+                        keyState.left = false;
+                        document.getElementById("key-left").classList.remove("pressed");
+                        break;
+                    case "ArrowDown":
+                        keyState.down = false;
+                        document.getElementById("key-down").classList.remove("pressed");
+                        break;
+                    case "ArrowUp":
+                        keyState.up = false;
+                        document.getElementById("key-up").classList.remove("pressed");
+                        break;
+                    case "ArrowRight":
+                        keyState.right = false;
+                        document.getElementById("key-right").classList.remove("pressed");
+                        break;
+                }
+            });
+            
+            // Button controls
+            controlKeys.forEach((key, index) => {
+                key.addEventListener("mousedown", () => {
+                    if (!gameActive) return;
+                    handleKeyPress(index);
+                    key.classList.add("pressed");
+                });
+                
+                key.addEventListener("mouseup", () => {
+                    key.classList.remove("pressed");
+                });
+                
+                key.addEventListener("touchstart", (e) => {
+                    e.preventDefault();
+                    if (!gameActive) return;
+                    handleKeyPress(index);
+                    key.classList.add("pressed");
+                });
+                
+                key.addEventListener("touchend", (e) => {
+                    e.preventDefault();
+                    key.classList.remove("pressed");
+                });
+            });
+            
+            // Game control buttons
+            startBtn.addEventListener("click", startGame);
+            resetBtn.addEventListener("click", resetGame);
+            restartBtn.addEventListener("click", () => {
+                gameOverScreen.style.display = "none";
+                resetGame();
+                startGame();
+            });
+            
+            // Difficulty buttons
+            diffButtons.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    diffButtons.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    difficulty = btn.dataset.difficulty;
+                    
+                    // Adjust game parameters based on difficulty
+                    switch(difficulty) {
+                        case "easy":
+                            noteSpeed = 3;
+                            noteInterval = 1200;
+                            break;
+                        case "medium":
+                            noteSpeed = 4;
+                            noteInterval = 900;
+                            break;
+                        case "hard":
+                            noteSpeed = 5;
+                            noteInterval = 700;
+                            break;
+                    }
+                });
+            });
+        }
+        
+        // Start the game
+        function startGame() {
+            if (gameStarted) return;
+            
+            resetGame();
+            gameActive = true;
+            gameStarted = true;
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fas fa-music"></i> PLAYING...';
+            
+            // Start generating notes
+            generateNotes();
+            
+            // Start game loop
+            gameLoop();
+        }
+        
+        // Reset the game
+        function resetGame() {
+            gameActive = false;
+            gameStarted = false;
+            score = 0;
+            combo = 0;
+            streak = 0;
+            accuracy = 100;
+            totalNotes = 0;
+            hitNotes = 0;
+            health = 100;
+            
+            // Clear all notes
+            laneNotes = [[], [], [], []];
+            document.querySelectorAll(".note").forEach(note => note.remove());
+            
+            // Reset UI
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play"></i> START GAME';
+            gameOverScreen.style.display = "none";
+            
+            updateStats();
+            updateHealth();
+        }
+        
+        // Generate falling notes
+        function generateNotes() {
+            if (!gameActive) return;
+            
+            // Determine how many notes to generate based on difficulty
+            let noteCount;
+            switch(difficulty) {
+                case "easy": noteCount = 20; break;
+                case "medium": noteCount = 30; break;
+                case "hard": noteCount = 40; break;
+                default: noteCount = 20;
+            }
+            
+            // Generate notes with delays
+            for (let i = 0; i < noteCount; i++) {
+                setTimeout(() => {
+                    if (!gameActive) return;
+                    
+                    // Random lane (0-3)
+                    const laneIndex = Math.floor(Math.random() * 4);
+                    createNote(laneIndex);
+                    
+                    // If this is the last note, schedule game end
+                    if (i === noteCount - 1) {
+                        setTimeout(() => {
+                            if (gameActive) endGame(true);
+                        }, 5000);
+                    }
+                }, i * noteInterval);
+            }
+        }
+        
+        // Create a note in a specific lane
+        function createNote(laneIndex) {
+            if (!gameActive) return;
+            
+            const lane = document.querySelectorAll(".lane")[laneIndex];
+            const noteType = noteTypes[laneIndex];
+            
+            const note = document.createElement("div");
+            note.className = `note ${noteType}`;
+            note.dataset.lane = laneIndex;
+            note.dataset.type = noteType;
+            
+            // Set note icon based on type
+            const icons = ["fa-arrow-left", "fa-arrow-down", "fa-arrow-up", "fa-arrow-right"];
+            note.innerHTML = `<i class="fas ${icons[laneIndex]}"></i>`;
+            
+            lane.appendChild(note);
+            laneNotes[laneIndex].push(note);
+            totalNotes++;
+        }
+        
+        // Main game loop
+        function gameLoop() {
+            if (!gameActive) return;
+            
+            // Move all notes down
+            for (let i = 0; i < laneNotes.length; i++) {
+                for (let j = laneNotes[i].length - 1; j >= 0; j--) {
+                    const note = laneNotes[i][j];
+                    const currentTop = parseFloat(note.style.top) || -30;
+                    const newTop = currentTop + noteSpeed;
+                    
+                    note.style.top = `${newTop}px`;
+                    
+                    // Check if note passed the hit area without being hit
+                    if (newTop > 350 && newTop < 380) {
+                        // Note is in hit area, we'll check for key press in handleKeyPress
+                    } else if (newTop > 400) {
+                        // Note missed - remove it
+                        note.remove();
+                        laneNotes[i].splice(j, 1);
+                        handleMiss();
+                    }
+                }
+            }
+            
+            // Update stats
+            updateStats();
+            
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Handle key press
+        function handleKeyPress(laneIndex) {
+            if (!gameActive) return;
+            
+            // Highlight the lane
+            const lanes = document.querySelectorAll(".lane");
+            lanes[laneIndex].classList.add("active");
+            setTimeout(() => lanes[laneIndex].classList.remove("active"), 200);
+            
+            // Play sound
+            playBeepSound(laneIndex);
+            
+            // Check if there's a note in the hit area
+            let hit = false;
+            for (let i = 0; i < laneNotes[laneIndex].length; i++) {
+                const note = laneNotes[laneIndex][i];
+                const noteTop = parseFloat(note.style.top) || -30;
+                
+                // Note is in hit area (350-380px from top)
+                if (noteTop >= 350 && noteTop <= 380) {
+                    // Calculate accuracy (closer to 365 is better)
+                    const distance = Math.abs(noteTop - 365);
+                    let points = 0;
+                    let hitText = "";
+                    
+                    if (distance < 10) {
+                        points = 100;
+                        hitText = "PERFECT!";
+                        streak++;
+                    } else if (distance < 20) {
+                        points = 50;
+                        hitText = "GOOD!";
+                        streak++;
+                    } else {
+                        points = 25;
+                        hitText = "OK";
+                        streak++;
+                    }
+                    
+                    // Add score
+                    score += points * (1 + combo * 0.1);
+                    combo++;
+                    hitNotes++;
+                    
+                    // Create hit effect
+                    createHitEffect(laneIndex, hitText);
+                    
+                    // Remove the note
+                    note.remove();
+                    laneNotes[laneIndex].splice(i, 1);
+                    
+                    hit = true;
+                    break;
+                }
+            }
+            
+            // If no note was hit, it's a miss
+            if (!hit) {
+                handleMiss();
+            }
+            
+            // Update health based on hit/miss
+            updateHealth();
+        }
+        
+        // Handle missed note
+        function handleMiss() {
+            combo = 0;
+            streak = 0;
+            health -= 10;
+            
+            // Check if health is depleted
+            if (health <= 0) {
+                health = 0;
+                endGame(false);
+            }
+            
+            updateHealth();
+        }
+        
+        // Create hit effect text
+        function createHitEffect(laneIndex, text) {
+            const lanes = document.querySelectorAll(".lane");
+            const lane = lanes[laneIndex];
+            
+            const effect = document.createElement("div");
+            effect.className = "hit-effect";
+            effect.textContent = text;
+            effect.style.left = `${lane.offsetLeft + lane.offsetWidth / 2 - 40}px`;
+            effect.style.top = "360px";
+            
+            document.querySelector(".gameplay").appendChild(effect);
+            
+            // Remove effect after animation
+            setTimeout(() => effect.remove(), 1000);
+        }
+        
+        // Update game stats display
+        function updateStats() {
+            scoreElement.textContent = Math.floor(score);
+            comboElement.textContent = combo;
+            streakElement.textContent = streak;
+            
+            // Calculate accuracy
+            if (totalNotes > 0) {
+                accuracy = Math.floor((hitNotes / totalNotes) * 100);
+            } else {
+                accuracy = 100;
+            }
+            accuracyElement.textContent = `${accuracy}%`;
+        }
+        
+        // Update health display
+        function updateHealth() {
+            healthBar.style.width = `${health}%`;
+            
+            // Change health bar color based on health
+            if (health > 50) {
+                healthBar.style.background = "linear-gradient(to right, #00ff00, #ffff00)";
+            } else if (health > 25) {
+                healthBar.style.background = "linear-gradient(to right, #ffff00, #ff6600)";
+            } else {
+                healthBar.style.background = "linear-gradient(to right, #ff6600, #ff0000)";
+            }
+        }
+        
+        // End the game
+        function endGame(success) {
+            gameActive = false;
+            gameStarted = false;
+            
+            // Show game over screen
+            gameOverScreen.style.display = "flex";
+            
+            if (success) {
+                document.querySelector(".game-over h2").textContent = "YOU WIN!";
+                document.querySelector(".game-over p").textContent = "You defeated Daddy Dearest!";
+            } else {
+                document.querySelector(".game-over h2").textContent = "GAME OVER";
+                document.querySelector(".game-over p").textContent = "You've been defeated by Daddy Dearest!";
+            }
+            
+            finalScoreElement.textContent = Math.floor(score);
+            
+            // Enable start button
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play"></i> START GAME';
+        }
+        
+        // Initialize the game when page loads
+        window.addEventListener("load", init);
+    </script>
+</body>
+</html>
